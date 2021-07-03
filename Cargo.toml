@@ -1,0 +1,13 @@
+[package]
+name = "nighttime"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tray-item = "0.5.0-alpha"
+directories = "3.0"
+serde = { version = "1.0", features = ["derive"] }
+confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features = ["yaml_conf"], default-features = false }
+chrono = "0.4"
