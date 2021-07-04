@@ -1,9 +1,15 @@
-use tray_item::*;
+use tray_item::TrayItem;
 use directories::{ProjectDirs};
-use std::{error::Error, path::PathBuf, process::Command};
+use std::{
+    error::Error,
+    path::PathBuf,
+    process::Command,
+    thread,
+    time::Duration
+};
 use serde::{Serialize, Deserialize};
 use confy::{load_path, store_path};
-use chrono::{Local};
+use chrono::{Local, Timelike};
 
 mod timerange;
 use timerange::TimeRange;
@@ -37,28 +43,47 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("error when parsing config file: {}", err);
         println!("overwriting with default config");
         let config = Config::default();
-        store_path(&config_path, &config).expect("can't write default configuration file");
+        store_path(&config_path, &config)
+            .expect("can't write default configuration file");
         config
     });
     dbg!(&config);
     let nighttime = config.nighttime;
-    println!("night time is: {}", nighttime);
-
-    let now = Local::now().time();
-    println!("current time is: {}", &now.format("%H:%M"));
+    println!("\nnight time is: {}", nighttime);
     
-    let is_nighttime = nighttime.includes(now);
-    dbg!(nighttime);
-    let next_switch_time = nighttime.next_boundary_from(now);
-    dbg!(next_switch_time);
-    let time_until_switch = nighttime.time_until_boundary_from(now);
-    dbg!(time_until_switch);
+    thread::spawn(move || {
+        loop {
+            let now = Local::now().time();
+            // println!("current time is: {}", &now.format("%H:%M"));
+            println!("\ncurrent time is: {}", &now);
+            let is_nighttime = nighttime.includes(now);
+            dbg!(is_nighttime);
 
-    // todo: sleep for the amount of time until next switch
+            set_grayscale(is_nighttime);
 
-    set_grayscale(is_nighttime);
+            let next_switch_time = nighttime.next_boundary_from(now);
+            println!(
+                "next time toggle grayscale at: {}",
+                // &next_switch_time.format("%H:%M")
+                &next_switch_time
+            );
 
-    start_tray(config_path);
+            let time_until_switch = nighttime.time_until_boundary_from(now);
+            println!(
+                "time until next toggle: {}",
+                // &time_until_switch.format("%H:%M")
+                &time_until_switch
+            );
+            let sleep_duration = 
+                Duration::from_secs(time_until_switch.num_seconds_from_midnight().into()) +
+                Duration::from_nanos(time_until_switch.nanosecond().into());
+            dbg!(sleep_duration);
+
+            thread::sleep(sleep_duration);
+        }
+    });
+
+    start_tray(config_path, nighttime);
 
     Ok(())
 }
@@ -79,24 +104,20 @@ fn toggle_grayscale() {
     }
 }
 
-fn start_tray(config_path: PathBuf) {
+fn start_tray(config_path: PathBuf, nighttime: TimeRange) {
     // 😴🌚☾☀︎
     let mut tray = TrayItem::new("🌚", "").unwrap();
-    tray.add_label("✨GRAY SCREEN FOR GAY BABES✨").unwrap();
+    tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", nighttime)).unwrap();
 
     // todo: display current settings in the menu item
     // but tray_item library is not enough for that, would have to
     // use macos api directly
 
-    tray.add_menu_item("edit settings", move || {
+    tray.add_menu_item("edit settings - needs restart", move || {
         Command::new("open")
             .arg(&config_path)
             .output()
             .expect("failed to open config file in system default application");
-    }).unwrap();
-
-    tray.add_menu_item("restart with new settings", || {
-        unimplemented!();
     }).unwrap();
 
     tray.add_menu_item("toggle grayscale", || {
