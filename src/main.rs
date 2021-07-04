@@ -1,9 +1,9 @@
 use tray_item::*;
 use directories::{ProjectDirs};
-use std::{error::Error, path::PathBuf, process::Command};
+use std::{error::Error, path::PathBuf, process::Command, fmt};
 use serde::{Serialize, Deserialize};
 use confy::{load_path, store_path};
-use chrono::{Local, Timelike, Duration, NaiveTime};
+use chrono::{Local, NaiveTime};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern {
@@ -11,21 +11,61 @@ extern {
     fn CGDisplayForceToGray(forceToGray: bool);
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Time {
-    hours: u32,
-    minutes: u32,
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+struct TimeRange {
+    start: NaiveTime,
+    end: NaiveTime,
+}
+
+impl TimeRange {
+    /// create time range defined as start and end boundary in hours and minutes
+    fn from_hmhm(start_h: u32, start_m: u32, end_h: u32, end_m: u32) -> Self {
+        Self {
+            start: NaiveTime::from_hms(start_h, start_m, 0),
+            end: NaiveTime::from_hms(end_h, end_m, 0),
+        }
+    }
+
+    /// check if given `time` is within this time range
+    fn includes(self, time: NaiveTime) -> bool {
+        let Self {start, end} = self;
+        let same_day = start < end;
+    
+        if same_day {
+            time > start && time < end
+        } else {
+            time > start || time < end
+        }
+    }
+
+    /// return either the start or the end of this time range,
+    /// depending on which would come sooner relative to the given `time`
+    fn next_boundary_from(self, time: NaiveTime) -> NaiveTime {
+        if self.includes(time) {self.end} else {self.start}
+    }
+
+    /// return time between given `time` and range boundary that would come sooner
+    fn time_until_boundary_from(self, time: NaiveTime) -> NaiveTime {
+        NaiveTime::from_hms(0, 0, 0) + (self.next_boundary_from(time) - time)
+    }
+}
+
+impl fmt::Display for TimeRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-{}", self.start.format("%H:%M"), self.end.format("%H:%M"))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    start: Time,
-    end: Time,
+    nighttime: TimeRange,
 }
 
 impl ::std::default::Default for Config {
     fn default() -> Self {
-        Self { start: Time {hours: 1, minutes: 30}, end: Time {hours: 10, minutes: 0} }
+        Self {
+            nighttime: TimeRange::from_hmhm(1, 30, 11, 00),
+        }
     }
 }
 
@@ -43,35 +83,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         config
     });
     dbg!(&config);
+    let nighttime = config.nighttime;
+    println!("night time is: {}", nighttime);
 
-    let time = Local::now().time();
-    println!("time is: {}", &time);
+    let now = Local::now().time();
+    println!("current time is: {}", &now.format("%H:%M"));
     
-    let nighttime = is_nighttime(time, config);
+    let is_nighttime = nighttime.includes(now);
     dbg!(nighttime);
-    set_grayscale(nighttime);
+    let next_switch_time = nighttime.next_boundary_from(now);
+    dbg!(next_switch_time);
+    let time_until_switch = nighttime.time_until_boundary_from(now);
+    dbg!(time_until_switch);
 
-    set_up_tray(config_path);
+    // todo: sleep for the amount of time until next switch
+
+    set_grayscale(is_nighttime);
+
+    start_tray(config_path);
 
     Ok(())
-}
-
-fn is_nighttime(time: NaiveTime, config: Config) -> bool {
-    // convert everything to seconds from midnight
-    let start = config.start.hours * 60 * 60 + config.start.minutes * 60;
-    let end = config.end.hours * 60 * 60 + config.end.minutes * 60;
-    let time = time.num_seconds_from_midnight();
-    let same_day = start < end;
-
-    if same_day {
-        time > start && time < end
-    } else {
-        time > start || time < end
-    }
-}
-
-fn seconds_until_next_switch(time: NaiveTime, config: Config) -> u32 {
-    unimplemented!();
 }
 
 fn set_grayscale(on: bool) {
@@ -90,10 +121,10 @@ fn toggle_grayscale() {
     }
 }
 
-fn set_up_tray(config_path: PathBuf) {
+fn start_tray(config_path: PathBuf) {
     // 😴🌚☾☀︎
     let mut tray = TrayItem::new("🌚", "").unwrap();
-    tray.add_label("gray screen for gay babes").unwrap();
+    tray.add_label("✨GRAY SCREEN FOR GAY BABES✨").unwrap();
 
     // todo: display current settings in the menu item
     // but tray_item library is not enough for that, would have to
@@ -122,78 +153,73 @@ fn set_up_tray(config_path: PathBuf) {
 
 #[test]
 fn same_day1() {
-    let config = Config { start: Time {hours: 1, minutes: 30}, end: Time {hours: 10, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
     let time = NaiveTime::from_hms(0, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
+    assert_eq!(nighttime.includes(time), false);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(1, 30, 0));
 }
 
 #[test]
 fn same_day2() {
-    let config = Config { start: Time {hours: 1, minutes: 30}, end: Time {hours: 10, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
     let time = NaiveTime::from_hms(3, 0, 0);
-    assert_eq!(is_nighttime(time, config), true);
+    assert_eq!(nighttime.includes(time), true);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(7, 0, 0));
 }
 
 #[test]
 fn same_day3() {
-    let config = Config { start: Time {hours: 1, minutes: 30}, end: Time {hours: 10, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
     let time = NaiveTime::from_hms(12, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
+    assert_eq!(nighttime.includes(time), false);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(13, 30, 0));
 }
 
 #[test]
 fn same_day4() {
-    let config = Config { start: Time {hours: 1, minutes: 30}, end: Time {hours: 10, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
     let time = NaiveTime::from_hms(18, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
+    assert_eq!(nighttime.includes(time), false);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(7, 30, 0));
 }
 
 #[test]
 fn new_day5() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
     let time = NaiveTime::from_hms(18, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
+    assert_eq!(nighttime.includes(time), false);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(4, 0, 0));
 }
 
 #[test]
 fn new_day6() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
     let time = NaiveTime::from_hms(23, 0, 0);
-    assert_eq!(is_nighttime(time, config), true);
+    assert_eq!(nighttime.includes(time), true);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(8, 0, 0));
 }
 
 #[test]
 fn new_day7() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
     let time = NaiveTime::from_hms(0, 0, 0);
-    assert_eq!(is_nighttime(time, config), true);
+    assert_eq!(nighttime.includes(time), true);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(7, 0, 0));
 }
 
 
 #[test]
 fn new_day8() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
     let time = NaiveTime::from_hms(6, 0, 0);
-    assert_eq!(is_nighttime(time, config), true);
+    assert_eq!(nighttime.includes(time), true);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(1, 0, 0));
 }
 
 #[test]
 fn new_day9() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
+    let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
     let time = NaiveTime::from_hms(8, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
-}
-
-#[test]
-fn new_day10() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
-    let time = NaiveTime::from_hms(18, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
-}
-
-#[test]
-fn new_day11() {
-    let config = Config { start: Time {hours: 22, minutes: 0}, end: Time {hours: 7, minutes: 0}};
-    let time = NaiveTime::from_hms(18, 0, 0);
-    assert_eq!(is_nighttime(time, config), false);
+    assert_eq!(nighttime.includes(time), false);
+    assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(14, 0, 0));
 }

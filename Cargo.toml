@@ -10,4 +10,4 @@ tray-item = "0.5.0-alpha"
 directories = "3.0"
 serde = { version = "1.0", features = ["derive"] }
 confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features = ["yaml_conf"], default-features = false }
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
