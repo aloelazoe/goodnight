@@ -1,13 +1,17 @@
 [package]
 name = "goodnight"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "sleep well 🌈🛌💜"
 
 [dependencies]
-tray-item = "0.5.0-alpha"
+tray-item = { git = "https://github.com/aloelazoe/tray-item-rs" }
 directories = "3.0"
 serde = { version = "1.0", features = ["derive"] }
 confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features = ["yaml_conf"], default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
+
+[patch."https://github.com/aloelazoe/tray-item-rs"]
+tray-item = { path = "../libraries/tray-item-rs" }
+
+[package.metadata.bundle]
