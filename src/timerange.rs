@@ -1,6 +1,6 @@
 use std::fmt;
 use serde::{Serialize, Deserialize};
-use chrono::{NaiveTime};
+use chrono::{NaiveTime, offset::TimeZone, DateTime, Duration};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct TimeRange {
@@ -35,9 +35,21 @@ impl TimeRange {
         if self.includes(time) {self.end} else {self.start}
     }
 
+    #[allow(unused)]
     /// return time between given `time` and range boundary that would come sooner
     pub fn time_until_boundary_from(self, time: NaiveTime) -> NaiveTime {
         NaiveTime::from_hms(0, 0, 0) + (self.next_boundary_from(time) - time)
+    }
+
+    /// return duration between given `time` and range boundary that would come sooner
+    pub fn duration_until_boundary_from(self, time: NaiveTime) -> Duration {
+        self.next_boundary_from(time) - time
+    }
+
+    pub fn did_cross_boundary<Tz: TimeZone>(self, since: DateTime<Tz>, until: DateTime<Tz>) -> bool
+        where <Tz as TimeZone>::Offset: Copy,
+    {
+        (until - since) > self.duration_until_boundary_from(since.time())
     }
 }
 
@@ -52,7 +64,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn same_day1() {
+    fn same_day_1() {
         let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
         let time = NaiveTime::from_hms(0, 0, 0);
         assert_eq!(nighttime.includes(time), false);
@@ -60,7 +72,7 @@ mod test {
     }
 
     #[test]
-    fn same_day2() {
+    fn same_day_2() {
         let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
         let time = NaiveTime::from_hms(3, 0, 0);
         assert_eq!(nighttime.includes(time), true);
@@ -68,7 +80,7 @@ mod test {
     }
 
     #[test]
-    fn same_day3() {
+    fn same_day_3() {
         let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
         let time = NaiveTime::from_hms(12, 0, 0);
         assert_eq!(nighttime.includes(time), false);
@@ -76,7 +88,7 @@ mod test {
     }
 
     #[test]
-    fn same_day4() {
+    fn same_day_4() {
         let nighttime = TimeRange::from_hmhm(1, 30, 10, 0);
         let time = NaiveTime::from_hms(18, 0, 0);
         assert_eq!(nighttime.includes(time), false);
@@ -84,7 +96,7 @@ mod test {
     }
 
     #[test]
-    fn new_day5() {
+    fn new_day_5() {
         let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
         let time = NaiveTime::from_hms(18, 0, 0);
         assert_eq!(nighttime.includes(time), false);
@@ -92,7 +104,7 @@ mod test {
     }
 
     #[test]
-    fn new_day6() {
+    fn new_day_6() {
         let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
         let time = NaiveTime::from_hms(23, 0, 0);
         assert_eq!(nighttime.includes(time), true);
@@ -100,7 +112,7 @@ mod test {
     }
 
     #[test]
-    fn new_day7() {
+    fn new_day_7() {
         let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
         let time = NaiveTime::from_hms(0, 0, 0);
         assert_eq!(nighttime.includes(time), true);
@@ -109,7 +121,7 @@ mod test {
 
 
     #[test]
-    fn new_day8() {
+    fn new_day_8() {
         let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
         let time = NaiveTime::from_hms(6, 0, 0);
         assert_eq!(nighttime.includes(time), true);
@@ -117,10 +129,42 @@ mod test {
     }
 
     #[test]
-    fn new_day9() {
+    fn new_day_9() {
         let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
         let time = NaiveTime::from_hms(8, 0, 0);
         assert_eq!(nighttime.includes(time), false);
         assert_eq!(nighttime.time_until_boundary_from(time), NaiveTime::from_hms(14, 0, 0));
+    }
+
+    #[test]
+    fn boundary_1() {
+        let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
+        let since = DateTime::parse_from_rfc3339("2021-01-01T12:30:00-00:00").unwrap();
+        let until = DateTime::parse_from_rfc3339("2021-01-01T12:31:00-00:00").unwrap();
+        assert_eq!(nighttime.did_cross_boundary(since, until), false);
+    }
+
+    #[test]
+    fn boundary_2() {
+        let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
+        let since = DateTime::parse_from_rfc3339("2021-01-01T12:30:00-00:00").unwrap();
+        let until = DateTime::parse_from_rfc3339("2021-01-01T23:30:00-00:00").unwrap();
+        assert_eq!(nighttime.did_cross_boundary(since, until), true);
+    }
+
+    #[test]
+    fn boundary_3() {
+        let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
+        let since = DateTime::parse_from_rfc3339("2021-01-01T12:30:00-00:00").unwrap();
+        let until = DateTime::parse_from_rfc3339("2021-03-01T12:31:00-00:00").unwrap();
+        assert_eq!(nighttime.did_cross_boundary(since, until), true);
+    }
+
+    #[test]
+    fn boundary_3_reverse() {
+        let nighttime = TimeRange::from_hmhm(22, 0, 7, 0);
+        let since = DateTime::parse_from_rfc3339("2021-01-01T12:30:00-00:00").unwrap();
+        let until = DateTime::parse_from_rfc3339("2021-03-01T12:31:00-00:00").unwrap();
+        assert_eq!(nighttime.did_cross_boundary(until, since), false);
     }
 }
