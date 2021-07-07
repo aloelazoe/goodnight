@@ -38,7 +38,11 @@ impl ::std::default::Default for Config {
 fn main() -> Result<(), Box<dyn Error>> {
     let project_dirs = ProjectDirs::from("", "",  "nighttime").unwrap();
     let mut config_path = project_dirs.config_dir().to_owned();
-    config_path.push("config.yaml");
+    if cfg!(debug_assertions) {
+        config_path.push("config.debug.yaml");
+    } else {
+        config_path.push("config.yaml");
+    }
     dbg!(&config_path);
 
     let config: Config = load_path(&config_path).unwrap_or_else(|err| {
@@ -100,7 +104,8 @@ fn start_tray(config_path: PathBuf, nighttime: TimeRange) {
     // 😴🌚☾☀︎
     let mut tray = TrayItem::new("🌚", "").unwrap();
     tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", nighttime)).unwrap();
-
+    #[cfg(debug_assertions)]
+    tray.add_label(&format!("debug mode")).unwrap();
     // todo: display current settings in the menu item
     // but tray_item library is not enough for that, would have to
     // use macos api directly or another library
