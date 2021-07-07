@@ -11,7 +11,7 @@ serde = { version = "1.0", features = ["derive"] }
 confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features = ["yaml_conf"], default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 
-[patch."https://github.com/aloelazoe/tray-item-rs"]
-tray-item = { path = "../libraries/tray-item-rs" }
+# [patch."https://github.com/aloelazoe/tray-item-rs"]
+# tray-item = { path = "../libraries/tray-item-rs" }
 
 [package.metadata.bundle]
