@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let nighttime = config.nighttime;
     let loop_frequency = Duration::from_secs(config.loop_seconds);
     // check if the screen is already in grayscale or not to revert to the
-    // original setting when quitting the app
+    // original setting when quitting the app if it wasn't toggled manually
     let was_grayscale = is_grayscale();
 
     thread::spawn(move || {
@@ -104,19 +104,12 @@ fn is_grayscale() -> bool {
     }
 }
 
-fn toggle_grayscale() {
-    set_grayscale(!is_grayscale());
-}
-
 fn start_tray(config_path: PathBuf, nighttime: TimeRange, was_grayscale: bool) {
     // 😴🌚☾☀︎
     let mut tray = TrayItem::new("🌚", "").unwrap();
     tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", nighttime)).unwrap();
     #[cfg(debug_assertions)]
     tray.add_label(&format!("debug mode")).unwrap();
-    // todo: display current settings in the menu item
-    // but tray_item library is not enough for that, would have to
-    // use macos api directly or another library
 
     tray.add_menu_item("edit settings - needs restart", move || {
         Command::new("open")
@@ -125,25 +118,31 @@ fn start_tray(config_path: PathBuf, nighttime: TimeRange, was_grayscale: bool) {
             .expect("failed to open config file in system default application");
     }).unwrap();
 
-    tray.add_menu_item("toggle grayscale", || {
-        toggle_grayscale();
-    }).unwrap();
-
-    #[allow(unused_mut)]
-    let mut inner = tray.inner_mut();
-    inner.add_quit_item("quit");
-    
+    let inner = tray.inner_mut();    
     // revert to the original grayscale setting when quitting the app
-    extern fn on_app_should_terminate(this: &Object, _cmd: Sel, _notification: id) {
-        let was_grayscale: bool = unsafe { *this.get_ivar("was_grayscale") };
+    extern fn on_app_should_terminate(this: &mut Object, _cmd: Sel, _notification: id) {
+        let was_grayscale: bool = unsafe { *(this.get_ivar("was_grayscale")) };
         set_grayscale(was_grayscale);
     }
-    unsafe {
-        inner.set_app_delegate(delegate!("AppDelegate", {
+    let delegate = unsafe {
+        delegate!("AppDelegate", {
             was_grayscale: bool = was_grayscale,
-            (applicationWillTerminate:) => on_app_should_terminate as extern fn(&Object, Sel, id)
-        }));
-    }
+            (applicationWillTerminate:) => on_app_should_terminate as extern fn(&mut Object, Sel, id)
+        })
+    };
+    unsafe {inner.set_app_delegate(delegate);};
+
+    // create a mutable reference from the raw pointer for capturing with closure
+    // (raw pointers can't implement sync and send)
+    let delegate_ref = unsafe {&mut*delegate};
+    inner.add_menu_item("toggle grayscale", move || {
+        let should_be_set_to_grayscale = !is_grayscale();
+        set_grayscale(should_be_set_to_grayscale);
+        // keep track of manual toggles to avoid overriding them with initial value when quitting
+        unsafe {delegate_ref.set_ivar::<bool>("was_grayscale", should_be_set_to_grayscale)};
+    }).unwrap();
+    
+    inner.add_quit_item("quit");
 
     inner.display();
 }
