@@ -35,7 +35,7 @@ struct Config {
 impl ::std::default::Default for Config {
     fn default() -> Self {
         Self {
-            nighttime: TimeRange::from_hmhm(1, 30, 11, 00),
+            nighttime: TimeRange::from_hmhm(0, 30, 10, 00),
             loop_seconds: 60,
         }
     }
