@@ -20,16 +20,14 @@ use chrono::{Local, TimeZone};
 mod timerange;
 use timerange::TimeRange;
 
-#[link(name = "ApplicationServices", kind = "framework")]
-extern {
-    fn CGDisplayUsesForceToGray() -> bool;
-    fn CGDisplayForceToGray(forceToGray: bool);
-}
+mod grayscale;
+use grayscale::{is_grayscale, set_grayscale};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     nighttime: TimeRange,
     loop_seconds: u64,
+    title: String,
 }
 
 impl ::std::default::Default for Config {
@@ -37,6 +35,7 @@ impl ::std::default::Default for Config {
         Self {
             nighttime: TimeRange::from_hmhm(0, 30, 10, 00),
             loop_seconds: 60,
+            title: "🌚".to_owned(),
         }
     }
 }
@@ -87,27 +86,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    start_tray(config_path, nighttime, was_grayscale);
+    start_tray(config_path, &config, was_grayscale);
 
     Ok(())
 }
 
-fn set_grayscale(on: bool) {
-    unsafe {
-        CGDisplayForceToGray(on);
-    }
-}
-
-fn is_grayscale() -> bool {
-    unsafe {
-        CGDisplayUsesForceToGray()
-    }
-}
-
-fn start_tray(config_path: PathBuf, nighttime: TimeRange, was_grayscale: bool) {
+fn start_tray(config_path: PathBuf, config: &Config, was_grayscale: bool) {
     // 😴🌚☾☀︎
-    let mut tray = TrayItem::new("🌚", "").unwrap();
-    tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", nighttime)).unwrap();
+    let mut tray = TrayItem::new(&config.title, "").unwrap();
+    tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", &config.nighttime)).unwrap();
     #[cfg(debug_assertions)]
     tray.add_label(&format!("debug mode")).unwrap();
 
