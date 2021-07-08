@@ -1,3 +1,9 @@
+#[macro_use] extern crate cocoa;
+#[macro_use] extern crate objc;
+
+use cocoa::base::id;
+use objc::runtime::{Object, Sel};
+
 use tray_item::TrayItem;
 use directories::{ProjectDirs};
 use std::{
@@ -55,8 +61,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     dbg!(&config);
     let nighttime = config.nighttime;
-
     let loop_frequency = Duration::from_secs(config.loop_seconds);
+    // check if the screen is already in grayscale or not to revert to the
+    // original setting when quitting the app
+    let was_grayscale = is_grayscale();
 
     thread::spawn(move || {
         // don't reset manually set grayscale but only until next night time boundary
@@ -79,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    start_tray(config_path, nighttime);
+    start_tray(config_path, nighttime, was_grayscale);
 
     Ok(())
 }
@@ -100,7 +108,7 @@ fn toggle_grayscale() {
     set_grayscale(!is_grayscale());
 }
 
-fn start_tray(config_path: PathBuf, nighttime: TimeRange) {
+fn start_tray(config_path: PathBuf, nighttime: TimeRange, was_grayscale: bool) {
     // 😴🌚☾☀︎
     let mut tray = TrayItem::new("🌚", "").unwrap();
     tray.add_label(&format!("✨GRAY SCREEN FOR GAY BABES {}✨", nighttime)).unwrap();
@@ -124,5 +132,18 @@ fn start_tray(config_path: PathBuf, nighttime: TimeRange) {
     #[allow(unused_mut)]
     let mut inner = tray.inner_mut();
     inner.add_quit_item("quit");
+    
+    // revert to the original grayscale setting when quitting the app
+    extern fn on_app_should_terminate(this: &Object, _cmd: Sel, _notification: id) {
+        let was_grayscale: bool = unsafe { *this.get_ivar("was_grayscale") };
+        set_grayscale(was_grayscale);
+    }
+    unsafe {
+        inner.set_app_delegate(delegate!("AppDelegate", {
+            was_grayscale: bool = was_grayscale,
+            (applicationWillTerminate:) => on_app_should_terminate as extern fn(&Object, Sel, id)
+        }));
+    }
+
     inner.display();
 }
