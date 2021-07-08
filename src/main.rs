@@ -1,6 +1,6 @@
 // this needs to be at the crate root
-#[macro_use] extern crate cocoa;
-#[macro_use] extern crate objc;
+// #[macro_use] extern crate cocoa;
+// #[macro_use] extern crate objc;
 
 mod config;
 mod timerange;
@@ -8,16 +8,17 @@ mod grayscale;
 mod tray;
 
 use directories::{ProjectDirs};
-use std::{
-    error::Error,
-    thread,
-    time::Duration
-};
+use std::{error::Error, process, rc::Rc, thread, time::Duration};
 use confy::{load_path, store_path};
 use chrono::{Local, TimeZone};
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::{Window, WindowBuilder},
+};
 use crate::config::Config;
 use crate::grayscale::{is_grayscale, set_grayscale};
-use crate::tray::start_tray;
+use crate::tray::create_tray;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let project_dirs = ProjectDirs::from("", "",  "nighttime").unwrap();
@@ -65,7 +66,44 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    start_tray(config_path, &config, was_grayscale);
+    let event_loop = EventLoop::new();
+    let window: Rc<Window> = Rc::new(WindowBuilder::new()
+        .with_title("A fantastic window!")
+        .with_inner_size(winit::dpi::LogicalSize::new(512.0, 512.0))
+        .build(&event_loop)
+        .unwrap()
+    );
+    // window.set_visible(false);
 
+    create_tray(config_path, &config, was_grayscale, window.clone());
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        // exit doesn't seem to work with menu bar
+        // *control_flow = ControlFlow::Exit;
+        println!("{:?}", event);
+        let now = Local::now();
+        println!("{}", now.timestamp_millis());
+
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == window.id() => {
+                println!("{:?}", event);
+                window.set_visible(false);
+                // this doesn't work
+                *control_flow = ControlFlow::Exit;
+                // this works though
+                // process::exit(0);
+            },
+            Event::MainEventsCleared => {
+                window.request_redraw();
+            }
+            _ => (),
+        }
+    });
+
+    #[allow(unreachable_code)]
     Ok(())
 }
