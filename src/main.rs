@@ -8,17 +8,30 @@ mod grayscale;
 mod tray;
 
 use directories::{ProjectDirs};
-use std::{error::Error, process, rc::Rc, thread, time::Duration};
+use std::{
+    error::Error, thread, time::Duration,
+};
 use confy::{load_path, store_path};
 use chrono::{Local, TimeZone};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    platform::macos::{
+        EventLoopExtMacOS,
+    }, 
+    window::{Window, WindowBuilder}
 };
 use crate::config::Config;
 use crate::grayscale::{is_grayscale, set_grayscale};
 use crate::tray::create_tray;
+
+#[derive(Debug)]
+pub enum CustomEvent {
+    CreateWindow,
+    DestroyWindow,
+    GrayscaleToggle(bool),
+    Exit,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let project_dirs = ProjectDirs::from("", "",  "nighttime").unwrap();
@@ -43,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let loop_frequency = Duration::from_secs(config.loop_seconds);
     // check if the screen is already in grayscale or not to revert to the
     // original setting when quitting the app if it wasn't toggled manually
-    let was_grayscale = is_grayscale();
+    let mut was_grayscale = is_grayscale();
 
     thread::spawn(move || {
         // don't reset manually set grayscale but only until next night time boundary
@@ -66,39 +79,65 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let event_loop = EventLoop::new();
-    let window: Rc<Window> = Rc::new(WindowBuilder::new()
-        .with_title("A fantastic window!")
-        .with_inner_size(winit::dpi::LogicalSize::new(512.0, 512.0))
-        .build(&event_loop)
-        .unwrap()
-    );
-    // window.set_visible(false);
+    let mut event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event();
+    event_loop.set_activation_policy(winit::platform::macos::ActivationPolicy::Accessory);
+    event_loop.enable_default_menu_creation(false);
+    let proxy = event_loop.create_proxy();
 
-    create_tray(config_path, &config, was_grayscale, window.clone());
+    create_tray(config_path, &config, was_grayscale, proxy);
+    
+    let mut window: Option<Window> = None;
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-        // exit doesn't seem to work with menu bar
-        // *control_flow = ControlFlow::Exit;
-        println!("{:?}", event);
+    event_loop.run(move |event, event_loop, control_flow| {
         let now = Local::now();
-        println!("{}", now.timestamp_millis());
+        // println!("{}: {:?}. {:?}", now.format("%T %3f"), &event, &control_flow);
+
+        *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                window_id,
-            } if window_id == window.id() => {
-                println!("{:?}", event);
-                window.set_visible(false);
-                // this doesn't work
-                *control_flow = ControlFlow::Exit;
-                // this works though
-                // process::exit(0);
+            Event::WindowEvent { event: window_event, window_id: _, } => {
+                match window_event {
+                    WindowEvent::CloseRequested => {
+                        println!("{}: {:?}. {:?}", now.format("%T %3f"), &window_event, &control_flow);
+                        *control_flow = ControlFlow::Exit;
+                        println!("set control flow to exit. control flow now: {:?}", &control_flow);
+                    },
+                    WindowEvent::Focused(is_focused) if !is_focused => {
+                        window = None;
+                    },
+                    _ => (),
+                }
             },
-            Event::MainEventsCleared => {
-                window.request_redraw();
+            Event::UserEvent(custom_event) => {
+                println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
+                match custom_event {
+                    CustomEvent::CreateWindow => {
+                        if window.is_none() {
+                            window = Some(WindowBuilder::new()
+                                .with_title("🌚🌈🛌💜")
+                                .with_inner_size(winit::dpi::LogicalSize::new(150.0, 175.0))
+                                .with_decorations(false)
+                                .build(&event_loop)
+                                .unwrap());
+                        }
+                        window.as_ref().unwrap().focus_window();
+                    }
+                    CustomEvent::DestroyWindow => {
+                        window = None;
+                    },
+                    CustomEvent::Exit => {
+                        println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
+                        *control_flow = ControlFlow::Exit;
+                        println!("set control flow to exit. control flow now: {:?}", &control_flow);
+                    },
+                    CustomEvent::GrayscaleToggle(is_grayscale) => {
+                        was_grayscale = is_grayscale;
+                    },
+                }
+            },
+            Event::LoopDestroyed => {
+                println!("{}: {:?}. {:?}", now.format("%T %3f"), &event, &control_flow);
+                set_grayscale(was_grayscale);
             }
             _ => (),
         }

@@ -5,13 +5,14 @@ edition = "2018"
 description = "sleep well 🌈🛌💜"
 
 [dependencies]
-tray-item = { git = "https://github.com/aloelazoe/tray-item-rs", rev = "ab5bc1d" }
+tray-item = { git = "https://github.com/aloelazoe/tray-item-rs", rev = "08a0499" }
 directories = "3.0"
 serde = { version = "1.0", features = ["derive"] }
 confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features = ["yaml_conf"], default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 cocoa = "0.24"
 objc = "0.2"
-winit = "0.24"
+# focus_window is still unreleased
+winit = { git = "https://github.com/rust-windowing/winit", rev = "5a65347" }
 
 [package.metadata.bundle]
