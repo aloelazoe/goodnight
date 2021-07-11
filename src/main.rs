@@ -23,13 +23,12 @@ use winit::{
 };
 use crate::config::Config;
 use crate::grayscale::{is_grayscale, set_grayscale};
-use crate::tray::create_tray;
+use crate::tray::add_status_bar_button;
 
 #[derive(Debug)]
 pub enum CustomEvent {
-    CreateWindow,
-    DestroyWindow,
     GrayscaleToggle(bool),
+    TrayButtonClick,
     Exit,
 }
 
@@ -82,9 +81,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event();
     event_loop.set_activation_policy(winit::platform::macos::ActivationPolicy::Accessory);
     event_loop.enable_default_menu_creation(false);
+
+    // todo: how do i make sure proxy has a long enough lifetime so that the
+    // raw pointer to it inside the objective-c object stays valid
+    // for as long as program runs?
     let proxy = event_loop.create_proxy();
 
-    create_tray(config_path, &config, was_grayscale, proxy);
+    add_status_bar_button(config.title.as_str(), &proxy);
     
     let mut window: Option<Window> = None;
 
@@ -102,6 +105,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         *control_flow = ControlFlow::Exit;
                         println!("set control flow to exit. control flow now: {:?}", &control_flow);
                     },
+                    // destroy window when it loses focus
                     WindowEvent::Focused(is_focused) if !is_focused => {
                         window = None;
                     },
@@ -111,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Event::UserEvent(custom_event) => {
                 println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
                 match custom_event {
-                    CustomEvent::CreateWindow => {
+                    CustomEvent::TrayButtonClick => {
                         if window.is_none() {
                             window = Some(WindowBuilder::new()
                                 .with_title("🌚🌈🛌💜")
@@ -119,12 +123,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .with_decorations(false)
                                 .build(&event_loop)
                                 .unwrap());
+                            window.as_ref().unwrap().focus_window();
+                        } else {
+                            window = None;
                         }
-                        window.as_ref().unwrap().focus_window();
                     }
-                    CustomEvent::DestroyWindow => {
-                        window = None;
-                    },
                     CustomEvent::Exit => {
                         println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
                         *control_flow = ControlFlow::Exit;
