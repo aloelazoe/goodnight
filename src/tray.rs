@@ -1,22 +1,32 @@
 use cocoa::{
-    appkit::{NSButton, NSStatusBar, NSStatusItem, NSVariableStatusItemLength},
+    appkit::{
+        NSButton, NSStatusBar, NSStatusItem,
+        NSVariableStatusItemLength,
+    },
     base::{id, nil},
-    foundation::NSString
+    foundation::{NSString, NSRect, NSPoint, NSSize},
 };
 use objc::{
     class, declare::ClassDecl, msg_send,
     runtime::{Object, Sel},
     sel, sel_impl
 };
-use winit::event_loop::EventLoopProxy;
-use crate::CustomEvent;
+use winit::{
+    event_loop::EventLoopProxy,
+    dpi::LogicalPosition,
+};
+use crate::{
+    config::Config,
+    CustomEvent,
+};
 
-pub fn add_status_bar_button(title: &str, loop_proxy: &EventLoopProxy<CustomEvent>) {
+/// macos specific
+pub fn add_status_bar_button(config: &Config, loop_proxy: &EventLoopProxy<CustomEvent>) {
     // create a status bar item
     let tray_button = unsafe {
         let status_bar: *mut Object = msg_send![class!(NSStatusBar), systemStatusBar];
         let item = status_bar.statusItemWithLength_(NSVariableStatusItemLength);
-        let title = NSString::alloc(nil).init_str(title);
+        let title = NSString::alloc(nil).init_str(config.title.as_str());
         let button = item.button();
         NSButton::setTitle_(button, title);
         button
@@ -28,43 +38,26 @@ pub fn add_status_bar_button(title: &str, loop_proxy: &EventLoopProxy<CustomEven
     // define action target class
     let superclass = class!(NSObject);
     let mut decl = ClassDecl::new("TrayActionTarget", superclass).unwrap();
+    decl.add_ivar::<usize>("_config");
     decl.add_ivar::<usize>("_loop_proxy");
-    extern fn button_action(this: &Object, _cmd: Sel, sender: id) {
-        unsafe {
-            println!("button_action");
-            dbg!(&*sender);
-
-            let loop_proxy_ptr: usize = *this.get_ivar("_loop_proxy");
-            let loop_proxy_ptr = loop_proxy_ptr as *const EventLoopProxy<CustomEvent>;
-            let loop_proxy = &*loop_proxy_ptr;
-            loop_proxy.send_event(CustomEvent::TrayButtonClick).unwrap();
-        }
-    }
-    extern fn init(this: &mut Object, _cmd: Sel, loop_proxy: usize) -> id {
-        unsafe {
-            this.set_ivar("_loop_proxy", loop_proxy);
-            this as *mut Object
-        }
-    }
     unsafe {
         decl.add_method(
             action_selector,
             button_action as extern fn(&Object, Sel, id),
         );
         decl.add_method(
-            sel!(init:),
-            init as extern fn(&mut Object, Sel, usize) -> id,
+            sel!(init:loop_proxy:),
+            init_button_target as extern fn(&mut Object, Sel, usize, usize) -> id,
         )
     }
     let action_target_class = decl.register();
-    
-    let loop_proxy_ptr = loop_proxy as *const EventLoopProxy<CustomEvent>;
-    let loop_proxy_ptr = loop_proxy_ptr as usize;
+
+    dbg!(pack_ptr(config));
 
     // instantiate action target class
     let action_target: id = unsafe {
         let action_target_empty: id = msg_send![action_target_class, alloc];
-        msg_send![action_target_empty, init:loop_proxy_ptr]
+        msg_send![action_target_empty, init:pack_ptr(config) loop_proxy:pack_ptr(loop_proxy)]
     };
 
     unsafe {
@@ -72,5 +65,63 @@ pub fn add_status_bar_button(title: &str, loop_proxy: &EventLoopProxy<CustomEven
     
         tray_button.setTarget_(action_target);
         tray_button.setAction_(action_selector);
+    }
+}
+
+fn pack_ptr<T>(reference: &T) -> usize {
+    let pointer = reference as *const T;
+    pointer as usize
+}
+
+unsafe fn unpack_ptr<T>(pointer_value: usize) -> &'static T {
+    let pointer = pointer_value as *const T;
+    &*pointer
+}
+
+extern fn button_action(this: &Object, _cmd: Sel, sender: id) {
+    unsafe {
+        dbg!(*this.get_ivar::<usize>("_config"));
+
+        let config: &Config = unpack_ptr(*this.get_ivar("_config"));
+        let loop_proxy: &EventLoopProxy<CustomEvent> = unpack_ptr(
+            *this.get_ivar("_loop_proxy")
+        );
+
+        println!("button_action");
+        dbg!(&*sender);
+
+        let bounds: NSRect = msg_send![sender, bounds];
+        let window: *const Object = msg_send![sender, window];
+        let screen: *const Object = msg_send![window, screen];
+        let screen_frame: NSRect = msg_send![screen, frame];
+        let NSRect {size: NSSize { width: display_width, ..}, ..} = screen_frame;
+
+        dbg!(&*window);
+        dbg!(&*screen);
+
+        let bounds_in_window: NSRect = msg_send![sender, convertRect:bounds toView:nil];
+        let bounds_on_screen: NSRect = msg_send![window, convertRectToScreen:bounds_in_window];
+        let NSRect {
+            origin: NSPoint {x, ..},
+            size: NSSize {width, height}
+        } = bounds_on_screen;
+
+        let window_x = if x + config.window_width > display_width {
+            x + width - config.window_width
+        } else {
+            x
+        };
+        let window_y = height;
+
+        loop_proxy.send_event(CustomEvent::ToggleWindow(Some(LogicalPosition {
+            x: window_x, y: window_y,
+        }))).unwrap();
+    }
+}
+extern fn init_button_target(this: &mut Object, _cmd: Sel, config: usize, loop_proxy: usize) -> id {
+    unsafe {
+        this.set_ivar("_config", config);
+        this.set_ivar("_loop_proxy", loop_proxy);
+        this as *mut Object
     }
 }

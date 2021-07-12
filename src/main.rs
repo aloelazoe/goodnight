@@ -18,8 +18,9 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     platform::macos::{
         EventLoopExtMacOS,
-    }, 
-    window::{Window, WindowBuilder}
+    },
+    window::{Window, WindowBuilder},
+    dpi::{LogicalSize, LogicalPosition},
 };
 use crate::config::Config;
 use crate::grayscale::{is_grayscale, set_grayscale};
@@ -28,7 +29,10 @@ use crate::tray::add_status_bar_button;
 #[derive(Debug)]
 pub enum CustomEvent {
     GrayscaleToggle(bool),
-    TrayButtonClick,
+    // maybe going to make it crossplatform in the future
+    // positioning the window relative to the status bar/tray item is platform
+    // dependent, so the suggested position is optional
+    ToggleWindow (Option<LogicalPosition<f64>>),
     Exit,
 }
 
@@ -87,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // for as long as program runs?
     let proxy = event_loop.create_proxy();
 
-    add_status_bar_button(config.title.as_str(), &proxy);
+    add_status_bar_button(&config, &proxy);
     
     let mut window: Option<Window> = None;
 
@@ -115,15 +119,30 @@ fn main() -> Result<(), Box<dyn Error>> {
             Event::UserEvent(custom_event) => {
                 println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
                 match custom_event {
-                    CustomEvent::TrayButtonClick => {
+                    CustomEvent::ToggleWindow (window_position) => {
+                        // todo: maybe this is unsafe
+                        // i wonder, if config gets moved here why does it still work
+                        // when dereferencing raw pointer in tray module...
+                        // it doesn't implement clone and copy..
+                        // why does it work?
+                        // maybe window_width and window_height got copied and there was no move?
+                        // but when i tried to force the whole config to move and verified that its
+                        // pointer has a different value from what tray has it still worked just fine..
+                        let window_size = LogicalSize::<f64> {
+                            width: config.window_width, height: config.window_height,
+                        };
+
                         if window.is_none() {
-                            window = Some(WindowBuilder::new()
+                            let mut builder = WindowBuilder::new()
                                 .with_title("🌚🌈🛌💜")
-                                .with_inner_size(winit::dpi::LogicalSize::new(150.0, 175.0))
                                 .with_decorations(false)
-                                .build(&event_loop)
-                                .unwrap());
-                            window.as_ref().unwrap().focus_window();
+                                .with_inner_size(window_size);
+                            if let Some(position) = window_position {
+                                builder = builder.with_position(position);
+                            }
+                            let new_window = builder.build(event_loop).unwrap();
+                            new_window.focus_window();
+                            window = Some(new_window);
                         } else {
                             window = None;
                         }
