@@ -8,9 +8,7 @@ mod grayscale;
 mod tray;
 
 use directories::{ProjectDirs};
-use std::{
-    error::Error, thread, time::Duration,
-};
+use std::{error::Error, thread, time::Duration, rc::Rc};
 use confy::{load_path, store_path};
 use chrono::{Local, TimeZone};
 use winit::{
@@ -37,7 +35,7 @@ pub enum CustomEvent {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let project_dirs = ProjectDirs::from("", "",  "nighttime").unwrap();
+    let project_dirs = ProjectDirs::from("", "",  "goodnight").unwrap();
     let mut config_path = project_dirs.config_dir().to_owned();
     if cfg!(debug_assertions) {
         config_path.push("config.debug.yaml");
@@ -46,14 +44,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     dbg!(&config_path);
 
-    let config: Config = load_path(&config_path).unwrap_or_else(|err| {
+    // wrap config in Rc to ensure that raw pointer to it that we need to use
+    // from objective-c stays valid after config gets moved into loop closure
+    let config: Rc<Config> = Rc::new(load_path(&config_path).unwrap_or_else(|err| {
         println!("error when parsing config file: {}", err);
         println!("overwriting with default config");
         let config = Config::default();
         store_path(&config_path, &config)
             .expect("can't write default configuration file");
         config
-    });
+    }));
     dbg!(&config);
     let nighttime = config.nighttime;
     let loop_frequency = Duration::from_secs(config.loop_seconds);
@@ -88,9 +88,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // todo: how do i make sure proxy has a long enough lifetime so that the
     // raw pointer to it inside the objective-c object stays valid
-    // for as long as program runs?
+    // for as long as program runs? i kinda can know that if i don't touch it
+    // it will only get dropped when main quits, but compiler can't be of any
+    // help in here to help ensure it for me. maybe use pin, idk
     let proxy = event_loop.create_proxy();
 
+    // println!("pointer to config in main is: {}", (Rc::as_ptr(&config)) as usize);
+    // println!("pointer to Rc<Config> in main is: {}", (&config as *const Rc<Config>) as usize);
+
+    // to work properly with winit (at least on mac) status bar item needs
+    // to be created after the event loop but before any windows are created
     add_status_bar_button(&config, &proxy);
     
     let mut window: Option<Window> = None;
@@ -120,21 +127,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("{}: {:?}. {:?}", now.format("%T %3f"), &custom_event, &control_flow);
                 match custom_event {
                     CustomEvent::ToggleWindow (window_position) => {
-                        // todo: maybe this is unsafe
-                        // i wonder, if config gets moved here why does it still work
-                        // when dereferencing raw pointer in tray module...
-                        // it doesn't implement clone and copy..
-                        // why does it work?
-                        // maybe window_width and window_height got copied and there was no move?
-                        // but when i tried to force the whole config to move and verified that its
-                        // pointer has a different value from what tray has it still worked just fine..
                         let window_size = LogicalSize::<f64> {
                             width: config.window_width, height: config.window_height,
                         };
 
                         if window.is_none() {
                             let mut builder = WindowBuilder::new()
-                                .with_title("🌚🌈🛌💜")
                                 .with_decorations(false)
                                 .with_inner_size(window_size);
                             if let Some(position) = window_position {

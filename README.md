@@ -12,3 +12,7 @@ have fun, sleep well🌚
 ## future plans, maybe
 
 * at some point i might figure out a way for it to also toggle "night shift" and "do not disturb" options.
+* maybe i would make it crossplatform
+
+## secret
+you can also use it to put magical creatures in your status bar

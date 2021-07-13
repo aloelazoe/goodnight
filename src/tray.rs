@@ -1,3 +1,4 @@
+use std::{rc::Rc};
 use cocoa::{
     appkit::{
         NSButton, NSStatusBar, NSStatusItem,
@@ -21,7 +22,7 @@ use crate::{
 };
 
 /// macos specific
-pub fn add_status_bar_button(config: &Config, loop_proxy: &EventLoopProxy<CustomEvent>) {
+pub fn add_status_bar_button(config: &Rc<Config>, loop_proxy: &EventLoopProxy<CustomEvent>) {
     // create a status bar item
     let tray_button = unsafe {
         let status_bar: *mut Object = msg_send![class!(NSStatusBar), systemStatusBar];
@@ -52,17 +53,16 @@ pub fn add_status_bar_button(config: &Config, loop_proxy: &EventLoopProxy<Custom
     }
     let action_target_class = decl.register();
 
-    dbg!(pack_ptr(config));
-
     // instantiate action target class
     let action_target: id = unsafe {
         let action_target_empty: id = msg_send![action_target_class, alloc];
-        msg_send![action_target_empty, init:pack_ptr(config) loop_proxy:pack_ptr(loop_proxy)]
+        msg_send![
+            action_target_empty,
+            init:pack_ptr_from_rc(&config) loop_proxy:pack_ptr(loop_proxy)
+        ]
     };
 
     unsafe {
-        dbg!(&*action_target);
-    
         tray_button.setTarget_(action_target);
         tray_button.setAction_(action_selector);
     }
@@ -73,6 +73,11 @@ fn pack_ptr<T>(reference: &T) -> usize {
     pointer as usize
 }
 
+fn pack_ptr_from_rc<T>(rc: &Rc<T>) -> usize {
+    let pointer = Rc::as_ptr(rc);
+    pointer as usize
+}
+
 unsafe fn unpack_ptr<T>(pointer_value: usize) -> &'static T {
     let pointer = pointer_value as *const T;
     &*pointer
@@ -80,24 +85,16 @@ unsafe fn unpack_ptr<T>(pointer_value: usize) -> &'static T {
 
 extern fn button_action(this: &Object, _cmd: Sel, sender: id) {
     unsafe {
-        dbg!(*this.get_ivar::<usize>("_config"));
-
         let config: &Config = unpack_ptr(*this.get_ivar("_config"));
         let loop_proxy: &EventLoopProxy<CustomEvent> = unpack_ptr(
             *this.get_ivar("_loop_proxy")
         );
-
-        println!("button_action");
-        dbg!(&*sender);
 
         let bounds: NSRect = msg_send![sender, bounds];
         let window: *const Object = msg_send![sender, window];
         let screen: *const Object = msg_send![window, screen];
         let screen_frame: NSRect = msg_send![screen, frame];
         let NSRect {size: NSSize { width: display_width, ..}, ..} = screen_frame;
-
-        dbg!(&*window);
-        dbg!(&*screen);
 
         let bounds_in_window: NSRect = msg_send![sender, convertRect:bounds toView:nil];
         let bounds_on_screen: NSRect = msg_send![window, convertRectToScreen:bounds_in_window];
