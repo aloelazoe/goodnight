@@ -11,7 +11,9 @@ confy = { git = "https://github.com/rust-cli/confy", rev = "664992ae", features 
 chrono = { version = "0.4", features = ["serde"] }
 cocoa = "0.24"
 objc = "0.2"
-# focus_window is still unreleased
-winit = { git = "https://github.com/rust-windowing/winit", rev = "5a65347" }
+# winit = { git = "https://github.com/rust-windowing/winit", rev = "5a65347" }
+# wgpu = { git = "https://github.com/gfx-rs/wgpu" }
+iced_winit = { git = "https://github.com/hecrj/iced.git" }
+iced_wgpu = "0.4"
 
 [package.metadata.bundle]

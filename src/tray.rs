@@ -12,7 +12,7 @@ use objc::{
     runtime::{Object, Sel},
     sel, sel_impl
 };
-use winit::{
+use iced_winit::winit::{
     event_loop::EventLoopProxy,
     dpi::LogicalPosition,
 };

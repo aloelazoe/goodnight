@@ -11,11 +11,12 @@ use directories::{ProjectDirs};
 use std::{error::Error, thread, time::Duration, rc::Rc};
 use confy::{load_path, store_path};
 use chrono::{Local, TimeZone};
-use winit::{
+use iced_winit::winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::macos::{
         EventLoopExtMacOS,
+        ActivationPolicy,
     },
     window::{Window, WindowBuilder},
     dpi::{LogicalSize, LogicalPosition},
@@ -83,7 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let mut event_loop: EventLoop<CustomEvent> = EventLoop::with_user_event();
-    event_loop.set_activation_policy(winit::platform::macos::ActivationPolicy::Accessory);
+    event_loop.set_activation_policy(ActivationPolicy::Accessory);
     event_loop.enable_default_menu_creation(false);
 
     // todo: how do i make sure proxy has a long enough lifetime so that the
